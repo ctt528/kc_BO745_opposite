@@ -1,0 +1,105 @@
+
+//use 15min chart just cause I like the look
+
+[intrabarordergeneration = True];
+Once clearprintlog;
+
+
+Inputs:
+	Starttime(0700),
+	Endtime(0745),
+	percentofReward4Stop(1),
+	RangewidthUpper(.50),
+	RangewidthLower(.10),
+	Tick(.01),
+	TickValue(6),
+	RiskPerTrade(5000);
+	
+Vars:
+	Timecheck(false),
+	rangehigh(0),
+	rangelow(0),
+	Rangewidth(0),
+	intrabarpersist entrypriceline(0),
+	intrabarpersist stopline(0),
+	NumcontractsNeedRounding(0),
+	Numcontracts(0),
+	Intrabarpersist RoundupT_RounddownF(false);
+	
+
+If time >= Starttime and time <= endtime then timecheck = True else timecheck = false;
+
+//reset
+If barstatus(1) = 2 and time = 1200 then 
+Begin
+	rangehigh = 0;
+	rangelow = 100000;
+end;
+
+//find range
+If barstatus(1) = 2 and timecheck = true then 
+Begin
+	If high > rangehigh then rangehigh = high else rangehigh = rangehigh;
+	If low < rangelow then rangelow = low else rangelow = rangelow;
+	rangewidth = rangehigh - rangelow;
+	If rangewidth > RangewidthLower and rangewidth < RangewidthUpper then condition1 = true else condition1 = false;
+	
+end;
+
+
+//take entry
+If barstatus(1) = 1 and marketposition = 0 and condition1 = true and time > 0745 and time < 0900 and open >= rangelow and open <= rangehigh Then
+Begin
+	if high >= rangehigh then 
+	begin
+		entrypriceLine = rangehigh;
+		stopline = rangelow;
+		NumcontractsNeedRounding = iff((((entrypriceline - Stopline)/tick)*tickvalue)<>0, RiskperTrade / ((((entrypriceline - Stopline)/tick) * tickvalue)*percentofReward4Stop), 1);
+		//roundup
+		value1 = NumcontractsNeedRounding + (1 - mod(NumcontractsNeedRounding,1));
+		//round dn,
+		Value2 = NumcontractsNeedRounding - mod(NumcontractsNeedRounding,1);
+		//which absvalue:(price - value) is the smallest? that one you take. 
+	 	If (absvalue(NumcontractsNeedRounding - value1)) <= (absvalue(NumcontractsNeedRounding - value2)) then RoundupT_RounddownF = True else RoundupT_RounddownF = false;
+		if RoundupT_RounddownF = true then NumContracts = NumcontractsNeedRounding + (1 - mod(NumcontractsNeedRounding,1))
+		else NumContracts = NumcontractsNeedRounding - mod(NumcontractsNeedRounding,1);
+		sellshort Numcontracts contracts next bar at entrypriceline limit;
+	end;
+	if low <= rangelow then
+	Begin
+		entrypriceline = rangelow;
+		stopline = rangehigh;
+		NumcontractsNeedRounding = iff(((Stopline - entrypriceline)/tick)<>0, RiskperTrade / ((((Stopline - entrypriceline)/tick) * tickvalue)*percentofReward4Stop), 1);
+		//roundup
+		value1 = NumcontractsNeedRounding + (1 - mod(NumcontractsNeedRounding,1));
+		//round dn,
+		Value2 = NumcontractsNeedRounding - mod(NumcontractsNeedRounding,1);
+		//which absvalue:(price - value) is the smallest? that one you take. 
+	 	If (absvalue(NumcontractsNeedRounding - value1)) <= (absvalue(NumcontractsNeedRounding - value2)) then RoundupT_RounddownF = True else RoundupT_RounddownF = false;
+		if RoundupT_RounddownF = true then NumContracts = NumcontractsNeedRounding + (1 - mod(NumcontractsNeedRounding,1))
+		else NumContracts = NumcontractsNeedRounding - mod(NumcontractsNeedRounding,1);
+		buy Numcontracts contracts next bar at entrypriceline limit;
+	end;
+end;
+
+//place exits
+If marketposition <> 0 then 
+Begin
+	if marketposition = 1 then 
+	Begin
+		sell ("stop") all contracts  next bar at (entrypriceline - ((Stopline - entrypriceline)*percentofReward4Stop)) stop;
+		sell ("tgt") all contracts  next bar at stopline limit;
+	end;
+	if marketposition = -1 then 
+	Begin
+		buytocover ("tgt.") all contracts next bar at stopline limit;
+		buytocover ("Stop.") all contracts next bar at (entrypriceline + ((entrypriceline - Stopline)*percentofReward4Stop)) stop;
+	end;
+end;
+//if date = 1201012 then print(date, "	",entrypriceline,"		", stopline);
+
+//by end of day exit.
+If marketposition = 1 and time = 1145 then sell all contracts next bar at market;
+If marketposition = -1 and time = 1145 then buytocover all contracts next bar at market;
+
+
